@@ -14,7 +14,7 @@
 /******************************************************
  *      LIST OF PIN      *   CONNECT WITH LORA MODULE *
  * DEVICE            PIN *    LoRa              PIN   *
- * DHT11             17  *    NSS               15    *
+ * DHT11             21  *    NSS               15    *
  * TRIGGER_1         19  *    RST               32    *
  * ECHO_1            18  *    MISO              13    *
  * TRIGGER_2         23  *    MOSI              12    *
@@ -42,7 +42,7 @@
 
 //DHT11 PIN
 #define SENSOR_TYPE DHT_TYPE_DHT11
-#define CONFIG_EXAMPLE_DATA_GPIO 17
+#define CONFIG_EXAMPLE_DATA_GPIO 21
 
 //HC-SR04 PIN
 #define MAX_DISTANCE_CM 500 // 5m max
@@ -62,6 +62,8 @@ xQueueHandle DHT_queue;
 int ppl_cnt = 0;     // Number of people in the bus
 int ppl_in  = 0;     // Number of people get on the bus at each station
 int ppl_out = 0;     // Number of people get off the bus at each station
+
+int door = 0;
 
 char Temp_ID[2]   = "0";
 char Cnt_ID[1]    = "1";
@@ -149,26 +151,29 @@ void ultrasonic_test_1(void *pvParameters)   // Entrance 1
 
    while (true)
    {
-      float distance_1;
-      esp_err_t res = ultrasonic_measure(&sensor_1, MAX_DISTANCE_CM, &distance_1);
-      if (res == ESP_OK)
+      if (door == 1)
       {
-         distance_1 = distance_1 * 100;
-         printf("Distance_1: %0.02f cm\n", distance_1);
-
-         if (distance_1 <= 9)    currentState1 = 1; 
-         else                    
+         float distance_1;
+         esp_err_t res = ultrasonic_measure(&sensor_1, MAX_DISTANCE_CM, &distance_1);
+         if (res == ESP_OK)
          {
-               currentState1 = 0;
-               previousState1 = 0;
-         }
+            distance_1 = distance_1 * 100;
+            printf("Distance_1: %0.02f cm\n", distance_1);
 
-         if(currentState1 == 1 && currentState1 != previousState1)
-         {    
-               previousState1 = currentState1;
-               ppl_cnt++;
-               ppl_in++;
-               printf("\n ppl_in: %d      ppl_cnt: %d \n",ppl_in,ppl_cnt);
+            if (distance_1 <= 9)    currentState1 = 1; 
+            else                    
+            {
+                  currentState1 = 0;
+                  previousState1 = 0;
+            }
+
+            if(currentState1 == 1 && currentState1 != previousState1)
+            {    
+                  previousState1 = currentState1;
+                  ppl_cnt++;
+                  ppl_in++;
+                  printf("\n ppl_in: %d      ppl_cnt: %d \n",ppl_in,ppl_cnt);
+            }
          }
       }
       vTaskDelay(pdMS_TO_TICKS(500));
@@ -188,27 +193,30 @@ void ultrasonic_test_2(void *pvParameters)   // Entrance 2
 
    while (true)
    {
-      float distance_2;
-      esp_err_t res = ultrasonic_measure(&sensor_2, MAX_DISTANCE_CM, &distance_2);
-      if (res == ESP_OK)
+      if(door == 1)
       {
-         distance_2 = distance_2 * 100;
-         printf("Distance_2: %0.02f cm\n", distance_2);
-
-         if (distance_2 <= 9)    currentState2 = 1; 
-         else                    
+         float distance_2;
+         esp_err_t res = ultrasonic_measure(&sensor_2, MAX_DISTANCE_CM, &distance_2);
+         if (res == ESP_OK)
          {
-               currentState2 = 0;
-               previousState2 = 0;
-         }
+            distance_2 = distance_2 * 100;
+            printf("Distance_2: %0.02f cm\n", distance_2);
 
-         if(currentState2 == 1 && currentState2 != previousState2)
-         {    
-               previousState2 = currentState2;
-               ppl_cnt--;
-               ppl_cnt = ppl_cnt < 0 ? 0 : ppl_cnt;
-               ppl_out++;
-               printf("\n ppl_out: %d      ppl_cnt: %d \n",ppl_out,ppl_cnt);
+            if (distance_2 <= 9)    currentState2 = 1; 
+            else                    
+            {
+                  currentState2 = 0;
+                  previousState2 = 0;
+            }
+
+            if(currentState2 == 1 && currentState2 != previousState2)
+            {    
+                  previousState2 = currentState2;
+                  ppl_cnt--;
+                  ppl_cnt = ppl_cnt < 0 ? 0 : ppl_cnt;
+                  ppl_out++;
+                  printf("\n ppl_out: %d      ppl_cnt: %d \n",ppl_out,ppl_cnt);
+            }
          }
       }
       vTaskDelay(pdMS_TO_TICKS(500));
@@ -232,13 +240,13 @@ void door_check(void *pvParameters)          // Door check
    {
       if (gpio_get_level(DOOR_PIN) == 1)    
       {
-         vTaskSuspend(TaskUltra_1);
-         vTaskSuspend(TaskUltra_2);
+         door = 1;
+         printf("DOOR OPEN !!!\n");
       }
       else
       {
-         vTaskResume(TaskUltra_1);
-         vTaskResume(TaskUltra_2);
+         door = 0;
+         printf("DOOR CLOSE !!!\n");
       }
       vTaskDelay (pdMS_TO_TICKS(500));
    }
@@ -254,10 +262,10 @@ void app_main()
    DHT_queue = xQueueCreate(20,sizeof(DHT_data));
 
    xTaskCreatePinnedToCore(&task_tx, "task_tx", 2048, NULL, 5, NULL,1);
-   // xTaskCreatePinnedToCore(&door_check, "door_check", 2048, NULL, 5, NULL,1);
+   xTaskCreate(&door_check, "door_check", 2048, NULL, 5, NULL);
 
-   xTaskCreatePinnedToCore(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL,0);
+   xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL);
 
-   // xTaskCreatePinnedToCore(ultrasonic_test_1, "ultrasonic_1", configMINIMAL_STACK_SIZE * 3, NULL, 5, &TaskUltra_1,0);
-   // xTaskCreatePinnedToCore(ultrasonic_test_2, "ultrasonic_2", configMINIMAL_STACK_SIZE * 3, NULL, 5, &TaskUltra_2,0);
+   xTaskCreate(ultrasonic_test_1, "ultrasonic_1", configMINIMAL_STACK_SIZE * 3, NULL, 2, &TaskUltra_1);
+   xTaskCreate(ultrasonic_test_2, "ultrasonic_2", configMINIMAL_STACK_SIZE * 3, NULL, 2, &TaskUltra_2);
 }
